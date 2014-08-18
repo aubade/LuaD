@@ -5,6 +5,11 @@ import luad.stack;
 
 import std.c.string : strlen;
 
+
+// shall we declare the attributes here?
+struct noscript {}
+
+
 /**
  * Enumerates all Lua types.
  */
