@@ -249,7 +249,7 @@ private void argumentTypeMismatch(lua_State* L, int idx, int expectedType)
  *	 L = stack to get from
  *	 idx = value stack index
  */
-T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L, int idx) if(!isUserStruct!T)
+T getValue(T, alias typeMismatchHandler = defaultTypeMismatch, bool customRef = true)(lua_State* L, int idx) if(!isUserStruct!T)
 {
 	debug //ensure unchanged stack
 	{
@@ -264,7 +264,11 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L, int
 		static assert("Ambiguous type " ~ T.stringof ~ " in stack push operation. Consider converting before pushing.");
 	}
 
-	static if(!is(T == LuaObject) && !is(T == LuaDynamic) && !is(T == LuaTable) && !is(T == LuaFunction) && !isVariant!T)
+	static if (customRef && __traits(compiles, &getFromScript!T(L)) && is(ReturnType!(getFromScript!T(L)) : T))
+	{
+		return getFromScript!T(L);
+	}
+	else static if(!is(T == LuaObject) && !is(T == LuaDynamic) && !is(T == LuaTable) && !is(T == LuaFunction) && !isVariant!T)
 	{
 		int type = lua_type(L, idx);
 		enum expectedType = luaTypeOf!T;
@@ -368,7 +372,7 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L, int
 }
 
 // we need an overload that handles struct and static arrays (which need to return by ref)
-ref T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L, int idx) if(isUserStruct!T)
+ref T getValue(T, alias typeMismatchHandler = defaultTypeMismatch, bool customRef = true)(lua_State* L, int idx) if(isUserStruct!T)
 {
 	debug //ensure unchanged stack
 	{
@@ -377,7 +381,11 @@ ref T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L,
 	}
 
 	// TODO: confirm that we need this in this overload...?
-	static if(!is(T == LuaObject) && !is(T == LuaDynamic) && !isVariant!T)
+	static if (customRef && __traits(compiles, &getFromScript!T(L)) && is(ReturnType!(getFromScript!T(L)) : T))
+	{
+		return getFromScript!T(L);
+	}
+	else static if(!is(T == LuaObject) && !is(T == LuaDynamic) && !isVariant!T)
 	{
 		int type = lua_type(L, idx);
 		enum expectedType = luaTypeOf!T;
