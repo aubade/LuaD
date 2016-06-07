@@ -40,9 +40,9 @@ public:
 	 *
 	 * See_Also: $(MREF LuaState.openLibs)
 	 */
-	this()
+	this(lua_Alloc alloc = null, void* userdata = null)
 	{
-		lua_State* L = luaL_newstate();
+		lua_State* L = alloc ? lua_newstate(alloc, userdata) : luaL_newstate();
 		owner = true;
 
 		extern(C) static int panic(lua_State* L)
@@ -214,6 +214,15 @@ public:
 	LuaFunction loadString(in char[] code) @trusted
 	{
 		if(luaL_loadstring(L, toStringz(code)) != 0)
+			lua_error(L);
+
+		return popValue!LuaFunction(L);
+	}
+
+
+	LuaFunction loadBuffer(in void[] code, const(char)[] name) @trusted
+	{
+		if(luaL_loadbuffer(L, cast(const(char)*)code.ptr, code.length, name.toStringz()) != 0)
 			lua_error(L);
 
 		return popValue!LuaFunction(L);

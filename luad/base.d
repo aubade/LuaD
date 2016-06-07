@@ -3,7 +3,7 @@ module luad.base;
 import luad.c.all;
 import luad.stack;
 
-import std.c.string : strlen;
+import core.stdc.string : strlen;
 
 
 // shall we declare the attributes here?
@@ -58,6 +58,7 @@ public Nil nil;
  */
 struct LuaObject
 {
+	__gshared static bool quitting = false;
 	private:
 	int r = LUA_REFNIL;
 	lua_State* L = null;
@@ -71,7 +72,7 @@ struct LuaObject
 		r = luaL_ref(L, LUA_REGISTRYINDEX);
 	}
 
-	void push() nothrow
+	public void push() nothrow
 	{
 		lua_rawgeti(L, LUA_REGISTRYINDEX, r);
 	}
@@ -88,13 +89,16 @@ struct LuaObject
 	public:
 	@trusted this(this)
 	{
+		if (L is null) return;
 		push();
 		r = luaL_ref(L, LUA_REGISTRYINDEX);
 	}
 
 	@trusted nothrow ~this()
 	{
+		if (L is null || r == LUA_REFNIL || quitting) return;
 		luaL_unref(L, LUA_REGISTRYINDEX, r);
+		release();
 	}
 
 	/// The underlying $(D lua_State) pointer for interfacing with C.
@@ -123,6 +127,7 @@ struct LuaObject
 	 */
 	@property LuaType type() @trusted nothrow
 	{
+		if (state is null) return LuaType.Nil;
 		push();
 		auto result = cast(LuaType)lua_type(state, -1);
 		lua_pop(state, 1);
@@ -134,9 +139,24 @@ struct LuaObject
 	 */
 	@property string typeName() @trusted /+ nothrow +/
 	{
+		import std.exception;
+		if (state is null) return "nil";
 		push();
+		if (lua_type(state, -1) == LuaType.Userdata) {
+			if (lua_getmetatable(L, -1)) {
+				pushValue(L, "__dtype");
+				lua_gettable(L, -2);
+				if (!lua_isnil(L, -1) && lua_type(L, -1) == LuaType.String) {
+					size_t len;
+					const(char)* cname = lua_tolstring(L, -1, &len);
+					auto name = assumeUnique(cname[0..len]);
+					lua_pop(state, 1);
+					return name;
+				}
+			}
+		}
 		const(char)* cname = luaL_typename(state, -1); // TODO: Doesn't have to use luaL_typename, i.e. no copy
-		auto name = cname[0.. strlen(cname)].idup;
+		auto name = assumeUnique(cname[0.. strlen(cname)]);
 		lua_pop(state, 1);
 		return name;
 	}
@@ -157,11 +177,26 @@ struct LuaObject
 	 */
 	string toString() @trusted
 	{
+		if (state is null) return "Nil";
 		push();
 
 		size_t len;
 		const(char)* cstr = luaL_tolstring(state, -1, &len);
 		auto str = cstr[0 .. len].idup;
+
+		lua_pop(state, 2);
+		return str;
+	}
+
+	auto toVString() {
+		import luad.conversions.helpers;
+
+		if (state is null) return VolatileString("Nil");
+		push();
+
+		size_t len;
+		const(char)* cstr = luaL_tolstring(state, -1, &len);
+		auto str = VolatileString(cstr[0 .. len]);
 
 		lua_pop(state, 2);
 		return str;
@@ -192,7 +227,7 @@ struct LuaObject
 	 */
 	bool opEquals(T : LuaObject)(ref T o) @trusted
 	{
-		if(o.state != this.state)
+		if(state is null || o.state is null || o.state != this.state)
 			return false;
 
 		push();
@@ -201,6 +236,42 @@ struct LuaObject
 
 		return lua_equal(state, -1, -2);
 	}
+}
+
+void releaseAll (LuaObject[] arr) {
+	foreach (ref i; arr) {
+		destroy(i);
+		i.release();
+	}
+}
+
+public struct VolatileString {
+	const(char)[] str;
+
+	alias str this;
+}
+
+public struct Ref(T)
+{
+	alias __instance this;
+
+	this(ref T s) { ptr = &s; }
+
+	@property ref T __instance() { return *ptr; }
+
+//private:
+	T* ptr;
+}
+
+public auto makeRef (T)(ref T val) {
+	return Ref!T(val);
+}
+
+public auto makeRefPtr (T)(T* val) {
+	Ref!T retval;
+	retval.ptr = val;
+
+	return retval;
 }
 
 unittest

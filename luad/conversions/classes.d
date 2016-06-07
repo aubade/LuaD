@@ -35,7 +35,12 @@ private void pushGetters(T)(lua_State* L)
 			{
 				static if(canCall!(T, member))
 				{
-					pushMethod!(T, member)(L);
+					static if (isRawLuaMethod!(T, member))
+					{
+						pushRawMethod!(T, member)(L);
+					} else {
+						pushMethod!(T, member)(L);
+					}
 					lua_setfield(L, -2, member.ptr);
 				}
 			}
@@ -44,7 +49,14 @@ private void pushGetters(T)(lua_State* L)
 				pushGetter!(T, member)(L);
 				lua_setfield(L, -3, member.ptr);
 			}
-		}
+		} /*else static if (!skipMember!(T, member) &&
+			isLuaCFunctionMember!(T, member))
+		{
+			static if (canCall!(T, member)) {
+				lua_pushcfunction(L, mixin("&T." ~ member));
+				lua_setfield(L, -2, member.ptr);
+			}
+		}*/
 	}
 
 	lua_pushcclosure(L, &index, 2);
@@ -85,8 +97,17 @@ private void pushMeta(T)(lua_State* L)
 	pushValue(L, T.mangleof);
 	lua_setfield(L, -2, "__dmangle");
 
-	lua_pushcfunction(L, &userdataCleaner);
+	lua_pushcfunction(L, &(userdataCleaner));
 	lua_setfield(L, -2, "__gc");
+
+	static if(hasMember!(T, "opIndex") && isSomeFunction!(__traits(getMember, T, "opIndex")))
+	{
+		static if (isRawLuaMethod!(T, "opIndex"))
+			pushRawMethod!(T, "opIndex")(L);
+		else
+			pushMethod!(T, "opIndex")(L);
+		lua_setfield(L, -2, "__opindex");
+	}
 
 	pushGetters!T(L);
 	lua_setfield(L, -2, "__index");
@@ -94,12 +115,12 @@ private void pushMeta(T)(lua_State* L)
 	lua_setfield(L, -2, "__newindex");
 
 	// TODO: look into why we can't call these on const objects... that's insane, right?
-	static if(canCall!(T, "toString"))
+	static if((!is(T == interface) && canCall!(T, "toString")) || (is(T == interface) && hasMember!(T, "toString")))
 	{
 		pushMethod!(T, "toString")(L);
 		lua_setfield(L, -2, "__tostring");
 	}
-	static if(canCall!(T, "opEquals"))
+	static if((!is(T == interface) && canCall!(T, "opEquals")) || (is(T == interface) && hasMember!(T, "opEquals")))
 	{
 		pushMethod!(T, "opEquals")(L);
 		lua_setfield(L, -2, "__eq");
@@ -110,9 +131,14 @@ private void pushMeta(T)(lua_State* L)
 	// TODO: operators, etc...
 
 	// set the parent metatable
-	static if(BaseClassesTuple!T.length > 0)
+	static if(is(T == class) && BaseClassesTuple!T.length > 0)
 	{
 		pushMeta!(BaseClassesTuple!T[0])(L);
+		lua_setmetatable(L, -2);
+	}
+	else static if (is(T == interface) && InterfacesTuple!T.length > 0)
+	{
+		pushMeta!(InterfacesTuple!T[0])(L);
 		lua_setmetatable(L, -2);
 	}
 
@@ -121,18 +147,30 @@ private void pushMeta(T)(lua_State* L)
 	lua_setfield(L, -2, "__metatable");
 }
 
-void pushClassInstance(T)(lua_State* L, T obj) if (is(T == class))
+void pushClassInstance(T)(lua_State* L, T obj) if (is(T == class) || is(T == interface))
 {
 	Rebindable!T* ud = cast(Rebindable!T*)lua_newuserdata(L, obj.sizeof);
 	*ud = obj;
 
 	GC.addRoot(ud);
+	//GC.addRoot(cast(void*)obj);
 
 	pushMeta!T(L);
 	lua_setmetatable(L, -2);
 }
 
-T getClassInstance(T)(lua_State* L, int idx) if (is(T == class))
+extern(C) int userdataCleanerObject(T) (lua_State* L)
+{
+	import std.stdio;
+	writeln("CLEANING!");
+	T obj = *(cast(Rebindable!T*) lua_touserdata(L, 1));
+	//GC.removeRoot(cast(void*)obj);
+	//GC.removeRoot(lua_touserdata(L, 1));
+
+	return 0;
+}
+
+T getClassInstance(T)(lua_State* L, int idx) if (is(T == class) || is(T == interface))
 {
 	//TODO: handle foreign userdata properly (i.e. raise errors)
 	verifyType!T(L, idx);
@@ -148,39 +186,48 @@ template hasCtor(T)
 // For use as __call
 void pushCallMetaConstructor(T)(lua_State* L)
 {
-	static if(!hasCtor!T)
-	{
-		static T ctor(LuaObject self)
+	static if (!__traits(isAbstractClass, T)) {
+		static if(!hasCtor!T)
 		{
-			static if(is(T == class))
-				return new T;
-			else
-				return T.init;
-		}
-	}
-	else
-	{
-		// TODO: handle each constructor overload in a loop.
-		//   TODO: handle each combination of default args
-		alias Ctors = typeof(__traits(getOverloads, T.init, "__ctor"));
-		alias Args = ParameterTypeTuple!(Ctors[0]);
+			static if(is(T == class)) {
+				static T ctor(LuaObject self)
+				{
+					return new T;
+				}
+			} else {
+				alias Args = Fields!T;
 
-		static T ctor(LuaObject self, Args args)
+				static T ctor(LuaObject self, Args args = T.init.tupleof)
+				{
+					return T(args);
+				}
+
+			}
+		}
+		else
 		{
-			static if(is(T == class))
-				return new T(args);
-			else
-				return T(args);
-		}
-	}
+			// TODO: handle each constructor overload in a loop.
+			//   TODO: handle each combination of default args
+			alias Ctors = typeof(__traits(getOverloads, T.init, "__ctor"));
+			alias Args = ParameterTypeTuple!(Ctors[0]);
 
-	pushFunction(L, &ctor);
-	lua_setfield(L, -2, "__call");
+			static T ctor(LuaObject self, Args args)
+			{
+				static if(is(T == class))
+					return new T(args);
+				else
+					return T(args);
+			}
+		}
+
+		pushFunction(L, &ctor);
+		lua_setfield(L, -2, "__call");
+	}
 }
 
 // TODO: Private static fields are mysteriously pushed without error...
 // TODO: __index should be a function querying the static fields directly
-void pushStaticTypeInterface(T)(lua_State* L) if(is(T == class) || is(T == struct))
+void pushStaticTypeInterface(T)(lua_State* L) if(is(T == class) || is(T == struct) || is(T == interface))
 {
 	lua_newtable(L);
 

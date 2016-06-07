@@ -118,15 +118,17 @@ int callFunction(T, RT = BindableReturnType!T)(lua_State* L, T func, ParameterTy
 				RT ret = func(args);
 			return pushReturnValues(L, ret);
 		}
-		else
+		else {
 			func(args);
+			return 0;
+		}
 	}
 	catch(Exception e)
 	{
 		luaL_error(L, "%s", toStringz(e.toString()));
+		return 0;
 	}
 
-	return 0;
 }
 
 // Ditto, but wrap the try-catch in a nested function because the return value's
@@ -141,8 +143,10 @@ int callFunction(T, RT = BindableReturnType!T)(lua_State* L, T func, ParameterTy
 	{
 		try
 			return func(args);
-		catch(Exception e)
+		catch(Exception e) {
 			luaL_error(L, "%s", e.toString().toStringz());
+			assert(0);
+		}
 	}
 
 	return pushReturnValues(L, call());
@@ -246,6 +250,26 @@ extern(C) int functionWrapper(T)(lua_State* L)
 	return callFunction!T(L, func, args);
 }
 
+extern(C) int rawMethodWrapper(T, string method)(lua_State* L) {
+	int top = lua_gettop(L);
+
+	if (top < 1)
+		argsError(L, top, 1);
+
+	static if(is(T == struct))
+	{
+		Ref!T self = *cast(Ref!T*)luaL_checkudata(L, 1, toStringz(T.mangleof));
+		if (self.ptr is null) luaL_error(L, `%s:%s: null "self".`, toStringz(T.stringof), toStringz(method));
+	}
+	else
+	{
+		T self = *cast(T*)luaL_checkudata(L, 1, toStringz(T.mangleof));
+		if (self is null) luaL_error(L, `%s:%s: null "self".`, toStringz(T.stringof), toStringz(method));
+	}
+
+	return __traits(getMember, self, method)(L);//mixin("self." ~ method ~ "(L)");
+}
+
 public:
 
 void pushFunction(T)(lua_State* L, T func) if (isSomeFunction!T)
@@ -305,6 +329,11 @@ void pushMethod(T, string member)(lua_State* L) if (isSomeFunction!(__traits(get
 	lua_pushcclosure(L, &methodWrapper!(M, T, isVirtual), 1);
 }
 
+void pushRawMethod(T, string member)(lua_State* L) if (isSomeFunction!(__traits(getMember, T, member))) {
+	lua_pushcfunction(L, &rawMethodWrapper!(T, member));
+}
+
+
 /**
  * Currently this function allocates a reference in the registry that is never deleted,
  * one for each call... see code comments
@@ -325,10 +354,11 @@ T getFunction(T)(lua_State* L, int idx) if (is(T == delegate))
 		//If you have a good solution to the problem of dangling references to a lua_State,
 		//please contact me :)
 
-		/+~this()
+		~this()
 		{
-			luaL_unref(L, LUA_REGISTRYINDEX, lref);
-		}+/
+			if (!LuaObject.quitting)
+				luaL_unref(L, LUA_REGISTRYINDEX, lref);
+		}
 
 		void push()
 		{

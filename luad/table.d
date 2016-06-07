@@ -16,7 +16,7 @@ struct LuaTable
 
 	package this(lua_State* L, int idx)
 	{
-		LuaObject.checkType(L, idx, LUA_TTABLE, "LuaTable");
+		//LuaObject.checkType(L, idx, LUA_TTABLE, "LuaTable");
 		object = LuaObject(L, idx);
 	}
 

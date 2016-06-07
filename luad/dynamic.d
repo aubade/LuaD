@@ -91,7 +91,7 @@ struct LuaDynamic
 		foreach(arg; args)
 			pushValue(object.state, arg);
 
-		lua_call(object.state, args.length, LUA_MULTRET);
+		auto r = lua_call(object.state, args.length, LUA_MULTRET);
 
 		auto nret = lua_gettop(object.state) - frame;
 

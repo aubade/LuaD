@@ -82,14 +82,32 @@ import luad.conversions.helpers;
  *	 L = stack to push to
  *	 value = value to push
  */
-void pushValue(T)(lua_State* L, T value) if(!isUserStruct!T)
+void pushValue(T, bool customRef = true)(lua_State* L, T value) if(!isUserStruct!T)
 {
-	static if(is(T : LuaObject))
-		value.push();
-
-	else static if(is(T == LuaDynamic))
-		value.object.push();
-
+	static if (customRef && __traits(compiles, value.__pushScriptRef(L))) {
+		value.__pushScriptRef(L);
+	} else static if(is(T : LuaObject)) {
+		if (value.state is L)
+			value.push();
+		else
+			lua_pushnil(L);
+	} else static if(is( T == LuaFunction)) {
+		if (value.state is L)
+			value.object.push();
+		else
+			lua_pushnil(L);
+	} else static if(is( T == LuaTable)) {
+		if (value.state is L)
+			value.object.push();
+		else
+			lua_pushnil(L);
+	}
+	else static if(is(T == LuaDynamic)) {
+		if (value.state is L)
+			value.object.push();
+		else
+			lua_pushnil(L);
+	}
 	else static if(is(T == Nil))
 		lua_pushnil(L);
 
@@ -143,7 +161,7 @@ void pushValue(T)(lua_State* L, T value) if(!isUserStruct!T)
 		pushPointer(L, value);
 	}
 
-	else static if(is(T == class))
+	else static if(is(T == class) || is(T == interface))
 	{
 		if(value is null)
 			lua_pushnil(L);
@@ -154,9 +172,11 @@ void pushValue(T)(lua_State* L, T value) if(!isUserStruct!T)
 		static assert(false, "Unsupported type `" ~ T.stringof ~ "` in stack push operation");
 }
 
-void pushValue(T)(lua_State* L, ref T value)  if(isUserStruct!T)
+void pushValue(T, bool customRef = true)(lua_State* L, ref T value)  if(isUserStruct!T)
 {
-	static if(isArray!T)
+	static if (customRef && __traits(compiles, value.__pushScriptRef(L))) {
+		value.__pushScriptRef(L);
+	} else static if(isArray!T)
 		pushArray(L, value);
 	else static if(is(T == struct))
 		pushStruct(L, value);
@@ -202,7 +222,7 @@ template luaTypeOf(T)
 	else static if(isArray!T || isAssociativeArray!T || is(T == LuaTable))
 		enum luaTypeOf = LUA_TTABLE;
 
-	else static if(is(T : const(Object)) || is(T == struct) || isPointer!T)
+	else static if(is(T : const(Object)) || is(T == struct) || isPointer!T || is(T == interface))
 		enum luaTypeOf = LUA_TUSERDATA;
 
 	else
@@ -234,7 +254,7 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L, int
 	debug //ensure unchanged stack
 	{
 		int _top = lua_gettop(L);
-		scope(success) assert(lua_gettop(L) == _top);
+		scope(success) if (lua_gettop(L) != _top) {import std.stdio; writeln("Stack size mismatch", lua_gettop(L), " ", _top);} //assert(lua_gettop(L) == _top);
 	}
 
 	//ambiguous types
@@ -244,13 +264,13 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L, int
 		static assert("Ambiguous type " ~ T.stringof ~ " in stack push operation. Consider converting before pushing.");
 	}
 
-	static if(!is(T == LuaObject) && !is(T == LuaDynamic) && !isVariant!T)
+	static if(!is(T == LuaObject) && !is(T == LuaDynamic) && !is(T == LuaTable) && !is(T == LuaFunction) && !isVariant!T)
 	{
 		int type = lua_type(L, idx);
 		enum expectedType = luaTypeOf!T;
 
 		//if a class reference, return null for nil values
-		static if(is(T : const(Object)) || isPointer!T)
+		static if(is(T : const(Object)) || isPointer!T || is(T == interface))
 		{
 			if(type == LuaType.Nil)
 				return null;
@@ -269,6 +289,12 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L, int
 	else static if(is(T == LuaDynamic)) // ditto
 	{
 		LuaDynamic obj;
+		obj.object = LuaObject(L, idx);
+		return obj;
+	}
+	else static if(is(T == LuaTable)) // ditto
+	{
+		LuaTable obj;
 		obj.object = LuaObject(L, idx);
 		return obj;
 	}
@@ -292,6 +318,13 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L, int
 
 	else static if(is(T : lua_Number))
 		return cast(T)lua_tonumber(L, idx);
+
+	else static if(is(Unqual!T == VolatileString)) {
+		size_t len;
+		const(char)* str = lua_tolstring(L, idx, &len);
+
+		return VolatileString(str[0 .. len]);
+	}
 
 	else static if(is(T : const(char)[]) || isVoidArray!T)
 	{
@@ -325,7 +358,7 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L, int
 	else static if(isPointer!T)
 		return getPointer!T(L, idx);
 
-	else static if(is(T : const(Object)))
+	else static if(is(T : const(Object)) || is(T == interface))
 		return getClassInstance!T(L, idx);
 
 	else
@@ -340,7 +373,7 @@ ref T getValue(T, alias typeMismatchHandler = defaultTypeMismatch)(lua_State* L,
 	debug //ensure unchanged stack
 	{
 		int _top = lua_gettop(L);
-		scope(success) assert(lua_gettop(L) == _top);
+		scope(success) if (lua_gettop(L) != _top) {import std.stdio; writeln("Stack size mismatch", lua_gettop(L), " ", _top);} //assert(lua_gettop(L) == _top);
 	}
 
 	// TODO: confirm that we need this in this overload...?

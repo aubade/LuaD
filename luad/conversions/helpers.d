@@ -27,7 +27,7 @@ template InOutReturnType(alias func, T)
 
 // Note: should we only consider @property functions?
 enum isGetter(alias m) = !is(ReturnType!m == void) && ParameterTypeTuple!(m).length == 0;// && isProperty!m;
-enum isSetter(alias m) = is(ReturnType!m == void) && ParameterTypeTuple!(m).length == 1;// && isProperty!m;
+enum isSetter(alias m) = ParameterTypeTuple!(m).length == 1;// && isProperty!m;
 
 template GetterType(T, string member)
 {
@@ -77,23 +77,12 @@ template TypeCandidates(T)
 		alias TypeCandidates = T;
 }
 
-struct Ref(T)
-{
-	alias __instance this;
-
-	this(ref T s) { ptr = &s; }
-
-	@property ref T __instance() { return *ptr; }
-
-private:
-	T* ptr;
-}
-
 alias AliasMember(T, string member) = Alias!(__traits(getMember, T, member));
 
 enum isInternal(string field) = field.length >= 2 && field[0..2] == "__";
 enum isMemberFunction(T, string member) = mixin("is(typeof(&T.init." ~ member ~ ") == delegate)");
-enum isUserStruct(T) = is(T == struct) && !is(T == LuaObject) && !is(T == LuaTable) && !is(T == LuaDynamic) && !is(T == LuaFunction) && !is(T == Ref!S, S);
+import luad.conversions.variant:isVariant;
+enum isUserStruct(T) = is(T == struct) && !isVariant!T && !is(T == Nil) && !is(T == LuaObject) && !is(T == LuaTable) && !is(T == LuaDynamic) && !is(T == LuaFunction) && !is(T == Ref!S, S) && !is(T == VolatileString);
 enum isValueType(T) = isUserStruct!T || isStaticArray!T;
 
 enum canRead(T, string member) = mixin("__traits(compiles, (T* a) => a."~member~")");
@@ -144,8 +133,17 @@ template skipMember(T, string member)
 			  mixin("is(T."~member~")") ||
 			  __traits(getProtection, __traits(getMember, T, member)) != "public")
 		enum skipMember = true;
-	else
-		enum skipMember = hasAttribute!(__traits(getMember, T, member), noscript) >= 0;
+	else {
+		enum skipMember = checkNoscript!(noscript, __traits(getMember, T, member));
+	}
+}
+
+template checkNoscript(alias UDA, T...) {
+	static if (T.length == 1) {
+		enum checkNoscript = hasUDA!(T, noscript);
+	} else {
+		enum checkNoscript = true;
+	}
 }
 
 template returnsRef(F...)
@@ -156,30 +154,34 @@ template returnsRef(F...)
 		enum returnsRef = false;
 }
 
-template hasAttribute(alias x, alias attr)
+/*template hasAttribute(alias attr, x...)
 {
-	template typeImpl(int i, A...)
-	{
-		static if(A.length == 0)
-			enum typeImpl = -1;
-		else static if(is(A[0]))
-			enum typeImpl = is(A[0] == attr) ? i : typeImpl!(i+1, A[1..$]);
+	static if (x.length < 1) {
+		enum hasAttribute = 0;
+	} else {
+		template typeImpl(int i, A...)
+		{
+			static if(A.length == 0)
+				enum typeImpl = -1;
+			else static if(is(A[0]))
+				enum typeImpl = is(A[0] == attr) ? i : typeImpl!(i+1, A[1..$]);
+			else
+				enum typeImpl = is(typeof(A[0]) == attr) ? i : typeImpl!(i+1, A[1..$]);
+		}
+		template valImpl(int i, A...)
+		{
+			static if(A.length == 0)
+				enum valImpl = -1;
+			else static if(is(A[0]) || !is(typeof(A[0]) : typeof(attr)))
+				enum valImpl = valImpl!(i+1, A[1..$]);
+			else
+				enum valImpl = A[0] == attr ? i : valImpl!(i+1, A[1..$]);
+		}
+		static if(is(attr))
+			enum hasAttribute = typeImpl!(0, __traits(getAttributes, x));
 		else
-			enum typeImpl = is(typeof(A[0]) == attr) ? i : typeImpl!(i+1, A[1..$]);
+			enum hasAttribute = valImpl!(0, __traits(getAttributes, x));
 	}
-	template valImpl(int i, A...)
-	{
-		static if(A.length == 0)
-			enum valImpl = -1;
-		else static if(is(A[0]) || !is(typeof(A[0]) : typeof(attr)))
-			enum valImpl = valImpl!(i+1, A[1..$]);
-		else
-			enum valImpl = A[0] == attr ? i : valImpl!(i+1, A[1..$]);
-	}
-	static if(is(attr))
-		enum hasAttribute = typeImpl!(0, __traits(getAttributes, x));
-	else
-		enum hasAttribute = valImpl!(0, __traits(getAttributes, x));
 }
 
 template getAttribute(alias x, size_t i)
@@ -189,7 +191,7 @@ template getAttribute(alias x, size_t i)
 		alias getAttribute = TypeTuple!(Attrs[i]);
 	else
 		enum getAttribute = TypeTuple!(Attrs[i]);
-}
+}*/
 
 
 void pushGetter(T, string member)(lua_State* L)
@@ -204,7 +206,7 @@ void pushGetter(T, string member)(lua_State* L)
 			{
 				ref RT get()
 				{
-					T _this = *cast(T*)&this;
+					T _this = cast(T)cast(void*)this;
 					return mixin("_this."~member);
 				}
 			}
@@ -212,7 +214,7 @@ void pushGetter(T, string member)(lua_State* L)
 			{
 				RT get()
 				{
-					T _this = *cast(T*)&this;
+					T _this = cast(T)cast(void*)this;
 					return mixin("_this."~member);
 				}
 			}
@@ -263,7 +265,7 @@ void pushSetter(T, string member)(lua_State* L)
 			{
 				final void set(ref ArgType value)
 				{
-					T _this = *cast(T*)&this;
+					T _this = cast(T)cast(void*)this;
 					mixin("_this."~member) = value;
 				}
 			}
@@ -271,7 +273,7 @@ void pushSetter(T, string member)(lua_State* L)
 			{
 				final void set(ArgType value)
 				{
-					T _this = *cast(T*)&this;
+					T _this =cast(T)cast(void*)this;
 					mixin("_this."~member) = value;
 				}
 			}
@@ -310,13 +312,41 @@ template isStaticMember(T, string member)
 {
 	static if(__traits(compiles, mixin("&T." ~ member)))
 	{
-		static if(is(typeof(mixin("&T.init." ~ member)) == delegate))
+		static if(is(typeof(mixin("&T.init." ~ member)) == delegate)) {
 			enum isStaticMember = __traits(isStaticFunction, mixin("T." ~ member));
-		else
+		} else {
 			enum isStaticMember = true;
+		}
 	}
 	else
 		enum isStaticMember = false;
+}
+
+private alias RawLuaMethod = int delegate(lua_State*);
+
+template isRawLuaMethod (T, string member) {
+	static if(__traits(compiles, mixin("&T.init." ~ member)))
+		{
+			static if(is(typeof(mixin("&T.init." ~ member)) == RawLuaMethod))
+				enum isRawLuaMethod = true;
+			else
+				enum isRawLuaMethod = false;
+		}
+		else
+			enum isRawLuaMethod = false;
+}
+
+template isLuaCFunctionMember(T, string member) {
+	static if(__traits(compiles, mixin("&T." ~ member)))
+	{
+		static if(__traits(isStaticFunction, mixin("T." ~ member)) &&
+			is(typeof(mixin("&T." ~ member)) == lua_CFunction))
+			enum isLuaCFunctionMember = true;
+		else
+			enum isLuaCFunctionMember = false;
+	}
+	else
+		enum isLuaCFunctionMember = false;
 }
 
 template mangledTypeCandidates(T)
@@ -367,6 +397,7 @@ void verifyType(T)(lua_State* L, int idx)
 
 extern(C) int userdataCleaner(lua_State* L)
 {
+	import std.stdio;
 	GC.removeRoot(lua_touserdata(L, 1));
 	return 0;
 }
@@ -384,11 +415,28 @@ extern(C) int index(lua_State* L)
 		return lua_gettop(L) - 2;
 	}
 	else
-		lua_pop(L, 1);
+	{
+	}
 
 	// return method
 	lua_getfield(L, lua_upvalueindex(2), field);
-	return 1;
+	if (lua_isnil(L, -1)) {
+
+		lua_getmetatable(L, 1);
+		if (!lua_isnil(L, -1)) {
+			auto pos = lua_gettop(L);
+			lua_getfield(L, -1, "__opindex");
+			if (!lua_isnil(L, -1)) {
+				lua_pushvalue(L, 1);
+				lua_pushvalue(L, 2);
+				lua_call(L, 2, LUA_MULTRET);
+				return lua_gettop(L) - pos;
+			}
+		}
+
+	}
+		//lua_pop(L, 1);
+		return 1;
 }
 
 extern(C) int newIndex(lua_State* L)
@@ -410,3 +458,4 @@ extern(C) int newIndex(lua_State* L)
 
 	return 0;
 }
+

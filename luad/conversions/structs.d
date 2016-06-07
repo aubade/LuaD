@@ -12,6 +12,7 @@ import luad.conversions.functions;
 
 import luad.c.all;
 import luad.stack;
+import luad.base:Ref;
 
 import core.memory;
 
@@ -34,7 +35,12 @@ private void pushGetters(T)(lua_State* L)
 			{
 				static if(canCall!(T, member))
 				{
-					pushMethod!(T, member)(L);
+					static if (isRawLuaMethod!(T, member))
+					{
+						pushRawMethod!(T, member)(L);
+					} else {
+						pushMethod!(T, member)(L);
+					}
 					lua_setfield(L, -2, member.ptr);
 				}
 			}
@@ -42,6 +48,13 @@ private void pushGetters(T)(lua_State* L)
 			{
 				pushGetter!(T, member)(L);
 				lua_setfield(L, -3, member.ptr);
+			}
+		} else static if (!skipMember!(T, member) &&
+			isLuaCFunctionMember!(T, member))
+		{
+			static if (canCall!(T, member)) {
+				lua_pushcfunction(L, mixin("&T." ~ member));
+				lua_setfield(L, -2, member.ptr);
 			}
 		}
 	}
@@ -86,6 +99,15 @@ private void pushMeta(T)(lua_State* L)
 	lua_pushcfunction(L, &userdataCleaner);
 	lua_setfield(L, -2, "__gc");
 
+	static if(__traits(hasMember, T, "opIndex"))
+	{
+		static if (isRawLuaMethod!(T, "opIndex"))
+			pushRawMethod!(T, "opIndex")(L);
+		else
+			pushMethod!(T, "opIndex")(L);
+
+		lua_setfield(L, -2, "__opindex");
+	}
 	pushGetters!T(L);
 	lua_setfield(L, -2, "__index");
 	pushSetters!T(L);
@@ -97,7 +119,7 @@ private void pushMeta(T)(lua_State* L)
 		lua_setfield(L, -2, "__tostring");
 	}
 
-	static if(__traits(hasMember, T, "opEquals"))
+	static if(__traits(hasMember, T, "opEquals") && __traits(compiles, T.opEquals(a)))
 	{
 		pushMethod!(T, "opEquals")(L);
 		lua_setfield(L, -2, "__eq");

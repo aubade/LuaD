@@ -16,7 +16,7 @@ struct LuaFunction
 
 	version(none) package this(lua_State* L, int idx)
 	{
-		LuaObject.checkType(L, idx, LUA_TFUNCTION, "LuaFunction");
+		//LuaObject.checkType(L, idx, LUA_TFUNCTION, "LuaFunction");
 		object = LuaObject(L, idx);
 	}
 
@@ -35,7 +35,7 @@ struct LuaFunction
 	assert(ret[2].to!bool());
 	 -----------------------
 	 */
-	LuaObject[] opCall(U...)(U args)
+	LuaObject[] opCall(U...)(auto ref U args)
 	{
 		return call!(LuaVariableReturn!(LuaObject[]))(args).returnValues;
 	}
@@ -58,7 +58,7 @@ struct LuaFunction
 	assert(answer == 42);
 	 * ------------------
 	 */
-	T call(T = void, U...)(U args)
+	T call(T = void, U...)(auto ref U args)
 	{
 		this.push();
 		foreach(arg; args)
