@@ -14,5 +14,6 @@
 
 	"libs-posix": ["lua5.1"],
 	"libs-windows-x86_64-dmd": ["lua5.1"],
-	"sourceFiles-windows-x86-dmd": ["extlib/lua5.1.lib"]
+	"sourceFiles-windows-x86-dmd": ["extlib/lua5.1.lib"],
+	"dflags-windows-x86-dmd":["-m32mscoff"]
 }
