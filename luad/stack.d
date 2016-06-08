@@ -264,9 +264,9 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch, bool customRef = 
 		static assert("Ambiguous type " ~ T.stringof ~ " in stack push operation. Consider converting before pushing.");
 	}
 
-	static if (customRef && __traits(compiles, &getFromScript!T(L)) && is(ReturnType!(getFromScript!T(L)) : T))
+	static if (customRef && __traits(compiles, &getFromScript!T(L, idx)) && is(ReturnType!(getFromScript!T(L, idx)) : T))
 	{
-		return getFromScript!T(L);
+		return getFromScript!T(L, idx);
 	}
 	else static if(!is(T == LuaObject) && !is(T == LuaDynamic) && !is(T == LuaTable) && !is(T == LuaFunction) && !isVariant!T)
 	{
@@ -381,9 +381,9 @@ ref T getValue(T, alias typeMismatchHandler = defaultTypeMismatch, bool customRe
 	}
 
 	// TODO: confirm that we need this in this overload...?
-	static if (customRef && __traits(compiles, &getFromScript!T(L)) && is(ReturnType!(getFromScript!T(L)) : T))
+	static if (customRef && __traits(compiles, &getFromScript!T(L, idx)) && is(ReturnType!(getFromScript!T(L, idx)) : T))
 	{
-		return getFromScript!T(L);
+		return getFromScript!T(L, idx);
 	}
 	else static if(!is(T == LuaObject) && !is(T == LuaDynamic) && !isVariant!T)
 	{
