@@ -230,7 +230,7 @@ template luaTypeOf(T)
 }
 
 // generic type mismatch message
-private void defaultTypeMismatch(lua_State* L, int idx, int expectedType)
+void defaultTypeMismatch(lua_State* L, int idx, int expectedType)
 {
 	luaL_error(L, "expected %s, got %s", lua_typename(L, expectedType), luaL_typename(L, idx));
 }
@@ -645,6 +645,40 @@ T callWithRet(T)(lua_State* L, int nargs)
 		auto nret = returnTypeSize!T;
 
 	return popReturnValues!T(L, nret);
+}
+
+bool checkType (T)(lua_State* L, int idx)
+{
+	static if (luaTypeOf!T != LuaType.Userdata) {
+		return (lua_type(L, idx) == luaTypeOf!T);
+	} else {
+		if(lua_type (L, idx) != LuaType.Userdata || lua_getmetatable(L, idx) == 0)
+			return false;
+	
+		int popNum = 0;
+		do
+		{
+			lua_getfield(L, -1, "__dmangle"); //must be a D object
+	
+			popNum += 2; // metatable and metatable.__dmangle
+	
+			// TODO: support pointers...
+	
+			size_t manglelen;
+			auto cmangle = lua_tolstring(L, -1, &manglelen);
+	
+			foreach(ty; mangledTypeCandidates!T)
+			{
+				if(cmangle[0 .. manglelen] == ty)
+				{
+					lua_pop(L, popNum);
+					return true;
+				}
+			}
+		}
+		while(is(T == class) && lua_getmetatable(L, -2) != 0);
+		return false;
+	}	
 }
 
 private extern(C) int printf(const(char)* fmt, ...);
