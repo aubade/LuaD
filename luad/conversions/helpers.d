@@ -19,7 +19,7 @@ package:
 template InOutReturnType(alias func, T)
 {
 	alias InOutReturnType = typeof((){
-		ReturnType!func function(inout Unqual!T) f;
+		ReturnType!func function(ref inout Unqual!T) f;
 		T t;
 		return f(t);
 	}());

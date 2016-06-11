@@ -372,7 +372,7 @@ T getFunction(T)(lua_State* L, int idx) if (is(T == delegate))
 	return delegate RetType(Args args)
 	{
 		func.push();
-		foreach(arg; args)
+		foreach(ref arg; args)
 			pushValue(L, arg);
 
 		return callWithRet!RetType(L, args.length);
