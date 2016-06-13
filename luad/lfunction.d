@@ -61,7 +61,7 @@ struct LuaFunction
 	T call(T = void, U...)(auto ref U args)
 	{
 		this.push();
-		foreach(arg; args)
+		foreach(ref arg; args)
 			pushValue(this.state, arg);
 
 		return callWithRet!T(this.state, args.length);
