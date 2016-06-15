@@ -38,7 +38,7 @@ struct LuaDynamic
 	 * Note:
 	 *    To call a member named "object", instantiate this function template explicitly.
 	 */
-	LuaDynamic[] opDispatch(string name, string file = __FILE__, uint line = __LINE__, Args...)(Args args)
+	LuaDynamic[] opDispatch(string name, string file = __FILE__, uint line = __LINE__, Args...)(auto ref Args args)
 	{
 		// Push self
 		object.push();
@@ -60,7 +60,7 @@ struct LuaDynamic
 		// Copy 'this' to the top of the stack
 		lua_pushvalue(object.state, -2);
 
-		foreach(arg; args)
+		foreach(ref arg; args)
 			pushValue(object.state, arg);
 
 		lua_call(object.state, args.length + 1, LUA_MULTRET);
@@ -83,12 +83,12 @@ struct LuaDynamic
 	 * Returns:
 	 *    Array of return values, or a null array if there were no return values
 	 */
-	LuaDynamic[] opCall(Args...)(Args args)
+	LuaDynamic[] opCall(Args...)(auto ref Args args)
 	{
 		auto frame = lua_gettop(object.state);
 
 		object.push(); // Callable
-		foreach(arg; args)
+		foreach(ref arg; args)
 			pushValue(object.state, arg);
 
 		auto r = lua_call(object.state, args.length, LUA_MULTRET);

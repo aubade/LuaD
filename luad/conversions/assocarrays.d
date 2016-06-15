@@ -14,7 +14,7 @@ void pushAssocArray(T, U)(lua_State* L, T[U] aa)
 {
 	assert(aa.length <= int.max, "lua_createtable only supports int.max many elements");
 	lua_createtable(L, 0, cast(int) aa.length);
-	foreach(key, value; aa)
+	foreach(ref key, ref value; aa)
 	{
 		pushValue(L, key);
 		pushValue(L, value);

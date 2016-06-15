@@ -82,7 +82,7 @@ import luad.conversions.helpers;
  *	 L = stack to push to
  *	 value = value to push
  */
-void pushValue(T, bool customRef = true)(lua_State* L, T value) if(!isUserStruct!T)
+void pushValue(T, bool customRef = true)(lua_State* L, auto ref T value) if(!isUserStruct!T)
 {
 	static if (customRef && __traits(compiles, value.__pushScriptRef(L))) {
 		value.__pushScriptRef(L);
@@ -263,7 +263,7 @@ private void argumentTypeMismatch(lua_State* L, int idx, int expectedType)
  *	 L = stack to get from
  *	 idx = value stack index
  */
-T getValue(T, alias typeMismatchHandler = defaultTypeMismatch, bool customRef = true)(lua_State* L, int idx) if(!isUserStruct!T)
+auto ref T getValue(T, alias typeMismatchHandler = defaultTypeMismatch, bool customRef = true)(lua_State* L, int idx) if(!isUserStruct!T)
 {
 	debug //ensure unchanged stack
 	{
@@ -471,7 +471,7 @@ T[] popStack(T = LuaObject)(lua_State* L, size_t n)
 }
 
 /// Get a function argument from the stack.
-auto getArgument(T, int narg)(lua_State* L, int idx)
+auto ref getArgument(T, int narg)(lua_State* L, int idx)
 {
 	alias ParameterTypeTuple!T Args;
 
@@ -554,7 +554,7 @@ template returnTypeSize(T)
  * Returns:
  *    Return value, collection of return values, or nothing
  */
-T popReturnValues(T)(lua_State* L, size_t nret)
+auto ref T popReturnValues(T)(lua_State* L, size_t nret)
 {
 	static if(isVariableReturnType!T)
 		return variableReturn(popStack!(ElementType!(T.WrappedType))(L, nret));
@@ -589,7 +589,7 @@ T popReturnValues(T)(lua_State* L, size_t nret)
  * Defaults to $(MREF pushValue), but has special handling for $(DPREF2 conversions, functions, LuaVariableReturn),
  * $(STDREF typecons, Tuple) and static arrays.
  */
-int pushReturnValues(T)(lua_State* L, T value)
+int pushReturnValues(T)(lua_State* L, auto ref T value)
 {
 	static if(isVariableReturnType!T)
 	{
@@ -598,7 +598,7 @@ int pushReturnValues(T)(lua_State* L, T value)
 		static if(calculateLength)
 			int length;
 
-		foreach(obj; value.returnValues)
+		foreach(ref obj; value.returnValues)
 		{
 			pushValue(L, obj);
 
@@ -655,7 +655,7 @@ void pushTuple(T)(lua_State* L, ref T tup) if(isTuple!T)
  * Zero, one or all return values as $(D T), taking into account $(D void),
  * $(DPREF2 conversions, functions, LuaVariableReturn) and $(STDREF typecons, Tuple) returns
  */
-T callWithRet(T)(lua_State* L, int nargs)
+auto ref T callWithRet(T)(lua_State* L, int nargs)
 {
 	static if(isVariableReturnType!T)
 		auto frame = lua_gettop(L) - nargs - 1; // the size of the stack before arguments and the function

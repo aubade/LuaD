@@ -34,11 +34,11 @@ struct LuaTable
 	execute(`echo hello, world!`);
 	 * ----------------------
 	 */
-	T get(T, U...)(U args) @trusted
+	auto ref T get(T, U...)(auto ref U args) @trusted
 	{
 		this.push();
 
-		foreach(key; args)
+		foreach(ref key; args)
 		{
 			pushValue(this.state, key);
 			lua_gettable(this.state, -2);
@@ -105,7 +105,7 @@ struct LuaTable
 	 *	 key = key to _set
 	 *	 value = value for $(D key)
 	 */
-	void set(T, U)(T key, U value) @trusted
+	void set(T, U)(ref T key, ref U value) @trusted
 	{
 		this.push();
 		scope(success) lua_pop(this.state, 1);
@@ -130,12 +130,12 @@ struct LuaTable
 	lua.doString(`assert(string.empty(""))`);
 	 * ----------------------
 	 */
-	void opIndexAssign(T, U...)(T value, U args) @trusted
+	void opIndexAssign(T, U...)(auto ref T value, auto ref U args) @trusted
 	{
 		this.push();
 		scope(success) lua_pop(this.state, 1);
 
-		foreach(i, arg; args)
+		foreach(i, ref arg; args)
 		{
 			static if(i != args.length - 1)
 			{

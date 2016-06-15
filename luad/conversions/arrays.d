@@ -14,7 +14,7 @@ void pushArray(T)(lua_State* L, ref T arr) if (isArray!T)
 {
 	assert(arr.length <= int.max, "lua_createtable only supports int.max many elements");
 	lua_createtable(L, cast(int) arr.length, 0);
-	foreach(i, v; arr)
+	foreach(i,ref v; arr)
 	{
 		pushValue(L, i + 1); //Lua tables start at 1, not 0
 		pushValue(L, v);
@@ -58,7 +58,7 @@ void fillStaticArray(T)(lua_State* L, ref T arr) if(isStaticArray!T)
 
 void pushStaticArray(T)(lua_State* L, ref T arr) if(isStaticArray!T)
 {
-	foreach(elem; arr)
+	foreach(ref elem; arr)
 		pushValue(L, elem);
 }
 

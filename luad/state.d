@@ -341,7 +341,7 @@ public:
 
 			lua_createtable(L, 0, cast(int)numElements);
 
-			foreach(pair; range)
+			foreach(ref pair; range)
 			{
 				pushValue(L, pair[0]);
 				pushValue(L, pair[1]);
@@ -354,7 +354,7 @@ public:
 
 			int i = 1;
 
-			foreach(value; range)
+			foreach(ref value; range)
 			{
 				pushValue(L, value);
 				lua_rawseti(L, -2, i);
@@ -377,7 +377,7 @@ public:
 	 * Returns:
 	 *	 A Lua reference to value
 	 */
-	T wrap(T = LuaObject, U)(U value) @trusted if(is(T : LuaObject) || is(T == LuaDynamic))
+	T wrap(T = LuaObject, U)(auto ref U value) @trusted if(is(T : LuaObject) || is(T == LuaDynamic))
 	{
 		pushValue(L, value);
 		return popValue!T(L);
@@ -403,7 +403,7 @@ public:
 	 * See_Also:
 	 *	 $(DPREF table, LuaTable._get)
 	 */
-	T get(T, U...)(U args)
+	T get(T, U...)(auto ref U args)
 	{
 		return globals.get!T(args);
 	}
@@ -413,7 +413,7 @@ public:
 	 * See_Also:
 	 *	 $(DPREF table, LuaTable._opIndex)
 	 */
-	LuaObject opIndex(T...)(T args)
+	LuaObject opIndex(T...)(auto ref T args)
 	{
 		return globals.get!LuaObject(args);
 	}
@@ -423,7 +423,7 @@ public:
 	 * See_Also:
 	 *	 $(DPREF table, LuaTable._set)
 	 */
-	void set(T, U)(T key, U value)
+	void set(T, U)(auto ref T key, auto ref U value)
 	{
 		globals.set(key, value);
 	}
@@ -433,7 +433,7 @@ public:
 	 * See_Also:
 	 *	 $(DPREF table, LuaTable._opIndexAssign)
 	 */
-	void opIndexAssign(T, U...)(T value, U args)
+	void opIndexAssign(T, U...)(auto ref T value, auto ref U args)
 	{
 		globals()[args] = value;
 	}
