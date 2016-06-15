@@ -108,7 +108,7 @@ void pushValue(T, bool customRef = true)(lua_State* L, T value) if(!isUserStruct
 		else
 			lua_pushnil(L);
 	}
-	else static if(is(T == Nil))
+	else static if (is(T == Nil))
 		lua_pushnil(L);
 
 	else static if(is(T == enum))
@@ -119,47 +119,51 @@ void pushValue(T, bool customRef = true)(lua_State* L, T value) if(!isUserStruct
 
 	else static if(is(T == char))
 		lua_pushlstring(L, &value, 1);
-
-	else static if(is(T : lua_Integer))
-		lua_pushinteger(L, value);
-
-	else static if(is(T : lua_Number))
-		lua_pushnumber(L, value);
-
-	else static if(is(T : const(char)[]))
-		lua_pushlstring(L, value.ptr, value.length);
-
-	else static if(isVoidArray!T)
-		lua_pushlstring(L, cast(const(char)*)value.ptr, value.length);
-
-	else static if(is(T : const(char)*))
-		lua_pushstring(L, value);
-
+	
 	else static if(isVariant!T)
 		pushVariant(L, value);
-
-	else static if(isAssociativeArray!T)
-		pushAssocArray(L, value);
-
-	else static if(isArray!T)
-		pushArray(L, value);
-
+	
+	else static if(is(Unqual!T == VolatileString) || (!is(T == struct) && !is(T == class) && !is(T == interface)))
+	{
+		static if(is(T : lua_Integer))
+			lua_pushinteger(L, value);
+	
+		else static if(is(T : lua_Number))
+			lua_pushnumber(L, value);
+	
+		else static if(is(T : const(char)[]))
+			lua_pushlstring(L, value.ptr, value.length);
+	
+		else static if(isVoidArray!T)
+			lua_pushlstring(L, cast(const(char)*)value.ptr, value.length);
+	
+		else static if(is(T : const(char)*))
+			lua_pushstring(L, value);
+	
+		else static if(isAssociativeArray!T)
+			pushAssocArray(L, value);
+	
+		else static if(isArray!T)
+			pushArray(L, value);
+	
+		// luaCFunction's are directly pushed
+		else static if(is(T == lua_CFunction) && functionLinkage!T == "C")
+			lua_pushcfunction(L, value);
+	
+		// other functions are wrapped
+		else static if(isSomeFunction!T)
+			pushFunction(L, value);
+	
+		else static if(isPointer!T)
+		{
+			// TODO: if value == null -> lua_pushnil(L);
+			pushPointer(L, value);
+		}
+		else
+			static assert(false, "Unsupported type `" ~ T.stringof ~ "` in stack push operation");
+	}
 	else static if(is(T == Ref!S, S) && isUserStruct!S)
 		pushStruct(L, value);
-
-	// luaCFunction's are directly pushed
-	else static if(is(T == lua_CFunction) && functionLinkage!T == "C")
-		lua_pushcfunction(L, value);
-
-	// other functions are wrapped
-	else static if(isSomeFunction!T)
-		pushFunction(L, value);
-
-	else static if(isPointer!T)
-	{
-		// TODO: if value == null -> lua_pushnil(L);
-		pushPointer(L, value);
-	}
 
 	else static if(is(T == class) || is(T == interface))
 	{
@@ -210,20 +214,30 @@ template luaTypeOf(T)
 	else static if(is(T == Nil))
 		enum luaTypeOf = LUA_TNIL;
 
-	else static if(is(T : const(char)[]) || is(T : const(char)*) || is(T == char) || isVoidArray!T)
+	else static if (is(Unqual!T == VolatileString))
 		enum luaTypeOf = LUA_TSTRING;
 
-	else static if(is(T : lua_Integer) || is(T : lua_Number))
-		enum luaTypeOf = LUA_TNUMBER;
+	else static if (!isPointer!T && !is(T == struct) && !is(T == class) && !is(T == interface))
+	{
+		static if(is(T : const(char)[]) || is(T : const(char)*) || is(T == char) || isVoidArray!T)
+			enum luaTypeOf = LUA_TSTRING;
+	
+		else static if(is(T : lua_Integer) || is(T : lua_Number))
+			enum luaTypeOf = LUA_TNUMBER;
+	
+		else static if(isSomeFunction!T || is(T == LuaFunction))
+			enum luaTypeOf = LUA_TFUNCTION;
+	
+		else static if(isArray!T || isAssociativeArray!T || is(T == LuaTable))
+			enum luaTypeOf = LUA_TTABLE;
 
-	else static if(isSomeFunction!T || is(T == LuaFunction))
-		enum luaTypeOf = LUA_TFUNCTION;
+		else
+			static assert(false, "No Lua type defined for `" ~ T.stringof ~ "`");
+	}
 
-	else static if(isArray!T || isAssociativeArray!T || is(T == LuaTable))
-		enum luaTypeOf = LUA_TTABLE;
-
-	else static if(is(T : const(Object)) || is(T == struct) || isPointer!T || is(T == interface))
+	else static if (is(T : const(Object)) || is(T == struct) || isPointer!T || is(T == interface))
 		enum luaTypeOf = LUA_TUSERDATA;
+	
 
 	else
 		static assert(false, "No Lua type defined for `" ~ T.stringof ~ "`");
@@ -268,7 +282,7 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch, bool customRef = 
 	{
 		return getFromScript!T(L, idx);
 	}
-	else static if(!is(T == LuaObject) && !is(T == LuaDynamic) && !is(T == LuaTable) && !is(T == LuaFunction) && !isVariant!T)
+	else static if(isVariableReturnType!T || (!is(T == LuaObject) && !is(T == LuaDynamic) && !is(T == LuaTable) && !is(T == LuaFunction) && !isVariant!T))
 	{
 		int type = lua_type(L, idx);
 		enum expectedType = luaTypeOf!T;
@@ -317,37 +331,13 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch, bool customRef = 
 	else static if(is(T == char))
 		return *lua_tostring(L, idx); // TODO: better define this
 
-	else static if(is(T : lua_Integer))
-		return cast(T)lua_tointeger(L, idx);
-
-	else static if(is(T : lua_Number))
-		return cast(T)lua_tonumber(L, idx);
-
 	else static if(is(Unqual!T == VolatileString)) {
 		size_t len;
 		const(char)* str = lua_tolstring(L, idx, &len);
 
 		return VolatileString(str[0 .. len]);
 	}
-
-	else static if(is(T : const(char)[]) || isVoidArray!T)
-	{
-		size_t len;
-		const(char)* str = lua_tolstring(L, idx, &len);
-		static if(is(T == char[]) || is(T == void[]))
-			return str[0 .. len].dup;
-		else
-			return str[0 .. len].idup;
-	}
-	else static if(is(T : const(char)*))
-		return lua_tostring(L, idx);
-
-	else static if(isAssociativeArray!T)
-		return getAssocArray!T(L, idx);
-
-	else static if(isArray!T)
-		return getArray!T(L, idx);
-
+	
 	else static if(isVariant!T)
 	{
 		if(!isAllowedType!T(L, idx))
@@ -356,14 +346,47 @@ T getValue(T, alias typeMismatchHandler = defaultTypeMismatch, bool customRef = 
 		return getVariant!T(L, idx);
 	}
 
-	else static if(isSomeFunction!T)
-		return getFunction!T(L, idx);
+	else static if (!is(T == struct) && !is(T == class) && !is(T == interface))
+	{
+		static if(is(T : lua_Integer))
+			return cast(T)lua_tointeger(L, idx);
+	
+		else static if(is(T : lua_Number))
+			return cast(T)lua_tonumber(L, idx);
 
-	else static if(isPointer!T)
-		return getPointer!T(L, idx);
 
+		else static if(is(T : const(char)[]) || isVoidArray!T)
+		{
+			size_t len;
+			const(char)* str = lua_tolstring(L, idx, &len);
+			static if(is(T == char[]) || is(T == void[]))
+				return str[0 .. len].dup;
+			else
+				return str[0 .. len].idup;
+		}
+		else static if(is(T : const(char)*))
+			return lua_tostring(L, idx);
+	
+		else static if(isAssociativeArray!T)
+			return getAssocArray!T(L, idx);
+	
+		else static if(isArray!T)
+			return getArray!T(L, idx);
+
+		else static if(isSomeFunction!T)
+			return getFunction!T(L, idx);
+	
+		else static if(isPointer!T)
+			return getPointer!T(L, idx);
+	
+		else
+		{
+			static assert(false, "Unsupported type `" ~ T.stringof ~ "` in stack read operation");
+		}
+	}		
 	else static if(is(T : const(Object)) || is(T == interface))
 		return getClassInstance!T(L, idx);
+
 
 	else
 	{

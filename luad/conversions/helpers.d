@@ -73,6 +73,8 @@ template TypeCandidates(T)
 	// TODO: this doesn't work when types have an indirection (ie, const(int)[])
 	static if(is(T == const(U), U))
 		alias TypeCandidates = TypeTuple!(U, T, immutable(U));
+	else static if (is(immutable(T):T) && is(const(T):T))
+		alias TypeCandidates = TypeTuple!(T, const(T), immutable(T));	
 	else
 		alias TypeCandidates = T;
 }
@@ -82,7 +84,10 @@ alias AliasMember(T, string member) = Alias!(__traits(getMember, T, member));
 enum isInternal(string field) = field.length >= 2 && field[0..2] == "__";
 enum isMemberFunction(T, string member) = mixin("is(typeof(&T.init." ~ member ~ ") == delegate)");
 import luad.conversions.variant:isVariant;
-enum isUserStruct(T) = is(T == struct) && !isVariant!T && !is(T == Nil) && !is(T == LuaObject) && !is(T == LuaTable) && !is(T == LuaDynamic) && !is(T == LuaFunction) && !is(T == Ref!S, S) && !is(T == VolatileString);
+import luad.stack:isVariableReturnType;
+enum isUserStruct(T) = is(T == struct) && (!isVariant!T && !is(T == Nil) && !is(T == LuaObject) && !is(T == LuaTable) 
+	&& !is(T == LuaDynamic) && !is(T == LuaFunction) && !is(T == Ref!S, S) && !is(T == VolatileString) &&
+	!isVariableReturnType!T);
 enum isValueType(T) = isUserStruct!T || isStaticArray!T;
 
 enum canRead(T, string member) = mixin("__traits(compiles, (T* a) => a."~member~")");
