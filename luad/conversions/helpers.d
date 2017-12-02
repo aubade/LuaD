@@ -13,15 +13,15 @@ import core.memory;
 import std.traits;
 import std.typetuple;
 
-package:
+package(luad):
 
 // resolves the proper return type for functions that return inout(T)
 template InOutReturnType(alias func, T)
 {
 	alias InOutReturnType = typeof((){
 		ReturnType!func function(ref inout Unqual!T) f;
-		T t;
-		return f(t);
+		T* t;
+		return f(*t);
 	}());
 }
 
@@ -68,7 +68,7 @@ template MethodsExclusingProperties(T, string member)
 }
 
 // produce a tuple of types that may be assigned to T
-template TypeCandidates(T)
+public template TypeCandidates(T)
 {
 	// TODO: this doesn't work when types have an indirection (ie, const(int)[])
 	static if(is(T == const(U), U))

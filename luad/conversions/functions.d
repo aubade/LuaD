@@ -181,10 +181,11 @@ extern(C) int methodWrapper(M, T, bool virtual)(lua_State* L)
 	static if(virtual)
 	{
 		alias RT = InOutReturnType!(M.init, T);
-		static if(returnsRef!M && isUserStruct!RT)
+		static if(returnsRef!M && isUserStruct!RT) {
 			alias VirtualWrapper = ref RT function(T, Args);
-		else
+		} else {
 			alias VirtualWrapper = RT function(T, Args);
+		}	
 		VirtualWrapper func = cast(VirtualWrapper)lua_touserdata(L, lua_upvalueindex(1));
 	}
 	else

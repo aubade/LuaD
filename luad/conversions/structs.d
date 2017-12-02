@@ -99,7 +99,7 @@ private void pushMeta(T)(lua_State* L)
 	lua_pushcfunction(L, &userdataCleaner);
 	lua_setfield(L, -2, "__gc");
 
-	static if(__traits(hasMember, T, "opIndex"))
+	static if(__traits(hasMember, T, "opIndex") && __traits(compiles, pushMethod!(T, "opIndex")(L)))
 	{
 		static if (isRawLuaMethod!(T, "opIndex"))
 			pushRawMethod!(T, "opIndex")(L);
